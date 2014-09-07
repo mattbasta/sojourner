@@ -1,39 +1,21 @@
 package sojourner
 
-import (
-	"time"
-)
-
-var inboundData chan PerfEvent
-var perfStack []PerfEvent
-var started bool
-
-var aggregatedDataCumulative map[string]time.Duration
-var aggregatedDataSelf map[string]time.Duration
-
-// Start() will initialize the performance aggregator and allow you to begin
-// collecting information
-func Start() {
-	inboundData = make(chan PerfEvent, 1024)
-	perfStack = make([]PerfEvent, 0)
-	aggregatedDataCumulative = make(map[string]time.Duration)
-	aggregatedDataSelf = make(map[string]time.Duration)
-	go readInboundData()
-	started = true
-}
-
-func readInboundData() {
+func (self *Monitor) readInboundData() {
 	for {
-		inbound := <-inboundData
+		inbound := <-self.inboundData
+
+		self.aggregateLock.Lock()
 
 		switch inbound.GetType() {
 		case PERF_START:
-			perfStack = append(perfStack, inbound)
+			self.perfStack = append(self.perfStack, inbound)
 		case PERF_END:
-			lps := len(perfStack)
+			lps := len(self.perfStack)
 			name := inbound.GetName()
-			lastItem := perfStack[lps-1]
-			perfStack = perfStack[:lps-1]
+
+			lastItem := self.perfStack[lps-1]
+
+			self.perfStack = self.perfStack[:lps-1]
 
 			if lastItem.GetName() != name {
 				panic("Unbalanced performance data")
@@ -42,19 +24,20 @@ func readInboundData() {
 			cumulativeTime := inbound.GetTimestamp().Sub(lastItem.GetTimestamp())
 			selfTime := cumulativeTime - lastItem.GetSubtractedTime()
 
-			if _, ok := aggregatedDataCumulative[name]; !ok {
-				aggregatedDataCumulative[name] = cumulativeTime
-				aggregatedDataSelf[name] = selfTime
+			if _, ok := self.aggregatedDataCumulative[name]; !ok {
+				self.aggregatedDataCumulative[name] = cumulativeTime
+				self.aggregatedDataSelf[name] = selfTime
 
 			} else {
-				aggregatedDataCumulative[name] += cumulativeTime
-				aggregatedDataSelf[name] += selfTime
+				self.aggregatedDataCumulative[name] += cumulativeTime
+				self.aggregatedDataSelf[name] += selfTime
 			}
 
 			if lps >= 2 {
-				perfStack[lps-2].SubtractSelf(cumulativeTime)
+				self.perfStack[lps-2].SubtractSelf(cumulativeTime)
 			}
 		}
+		self.aggregateLock.Unlock()
 
 	}
 }
