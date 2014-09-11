@@ -6,7 +6,7 @@ package sojourner
 // The aggregator must have been initialized with Start() before this method
 // can be called.
 //
-// Begin() and End() must be called on the same goroutine for any given
+// `Begin()` and End() must be called on the same goroutine for any given
 // operation.
 func (self *Monitor) Begin(name string) {
 	self.inboundData <- newPerfEvent(PERF_START, name)
