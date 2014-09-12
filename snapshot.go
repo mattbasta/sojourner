@@ -42,15 +42,7 @@ func (self *Monitor) Snapshot() PerformanceSnapshot {
 	metrics := self.takeSnapshot()
 	self.aggregateLock.RUnlock()
 
-	result := make([]PerformanceMetric, len(metrics))
-	for _, metric := range metrics {
-		result = append(result, metric)
-	}
-
-	sort.Sort(metricBag(result))
-
-	converted := PerformanceSnapshot{result, self.created}
-	return converted
+	return perfMapToSnapshot(metrics, self.created)
 }
 
 func (self *Monitor) takeSnapshot() map[string]PerformanceMetric {
@@ -92,4 +84,44 @@ func (self *Monitor) takeSnapshot() map[string]PerformanceMetric {
 	}
 
 	return metrics
+}
+
+func perfMapToSnapshot(metrics map[string]PerformanceMetric, created time.Time) PerformanceSnapshot {
+	result := make([]PerformanceMetric, len(metrics))
+	for _, metric := range metrics {
+		result = append(result, metric)
+	}
+
+	sort.Sort(metricBag(result))
+
+	converted := PerformanceSnapshot{result, created}
+	return converted
+}
+
+// CombineSnapshot combines two or more PerformanceSnapshot objects into a
+// single PerformanceSnapshot object. This is done by combining individual
+// PerformanceMetric objects with identical nmes.
+func CombineSnapshots(snapshots []PerformanceSnapshot) PerformanceSnapshot {
+	metrics := make(
+		map[string]PerformanceMetric,
+		1024,
+	)
+
+	for _, snapshot := range snapshots {
+		for _, metric := range snapshot.Metrics {
+			if existingMetric, ok := metrics[metric.Name]; ok {
+				existingMetric.Cumulative += metric.Cumulative
+				existingMetric.Self += metric.Self
+			} else {
+				clone := PerformanceMetric{
+					metric.Name,
+					metric.Cumulative,
+					metric.Self,
+				}
+				metrics[metric.Name] = clone
+			}
+		}
+	}
+
+	return perfMapToSnapshot(metrics, snapshots[0].created)
 }
